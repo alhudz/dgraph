@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/golang/glog"
@@ -28,12 +29,21 @@ type ResetPasswordInput struct {
 	Namespace uint64
 }
 
-func (s *Server) ResetPassword(ctx context.Context, inp *ResetPasswordInput) error {
-	query := fmt.Sprintf(`{
+// resetPasswordQuery builds the upsert lookup for the user whose password is
+// being reset. The xid is escaped with strconv.Quote (as in the uniqueness
+// check in server.go) so that a value containing a double quote cannot break
+// out of the string literal and inject additional eq() values or query blocks.
+func resetPasswordQuery(userID string) string {
+	xid := strconv.Quote(userID)
+	return fmt.Sprintf(`{
 			x as updateUser(func: eq(dgraph.xid, "%s")) @filter(type(dgraph.type.User)) {
 				uid
 			}
-		}`, inp.UserID)
+		}`, xid[1:len(xid)-1])
+}
+
+func (s *Server) ResetPassword(ctx context.Context, inp *ResetPasswordInput) error {
+	query := resetPasswordQuery(inp.UserID)
 
 	userNQuads := []*api.NQuad{
 		{
